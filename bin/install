@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+install_kubelogin() {
+  local install_type=$1
+  local version=$2
+  local install_path=$3
+  local platform="$(uname | tr '[:upper:]' '[:lower:]')_amd64"
+  local bin_install_path="$install_path/bin"
+  local binary_path="$bin_install_path/kubectl-oidc_login"
+  local download_url=$(get_download_url $version $platform)
+
+  if [ "$TMPDIR" = "" ]; then
+    local tmp_download_dir=$(mktemp -d -t kubelogin_XXXXXX)
+  else
+    local tmp_download_dir=$TMPDIR
+  fi
+
+  local download_path="$tmp_download_dir/$(get_filename $version $platform)"
+
+  echo "Downloading kubelogin from ${download_url} to ${download_path}"
+  curl -f -Lo $download_path $download_url
+
+  echo "Extracting kubelogin archive"
+  unarchive "$download_path" "$tmp_download_dir"
+
+  echo "Creating bin directory"
+  mkdir -p "${bin_install_path}"
+
+  echo "Cleaning previous binaries"
+  rm -f $binary_path 2>/dev/null || true
+
+  echo "Copying binary"
+  cp "${tmp_download_dir}/kubelogin" ${binary_path}
+  chmod +x ${binary_path}
+}
+
+unarchive() {
+  local archive_path="$1"
+  local dest_dir="$2"
+
+  if [[ "$archive_path" =~ "zip" ]]; then
+    unzip "$archive_path" -d $dest_dir
+    return
+  fi
+
+  if [[ "$archive_path" =~ "tar.gz" ]]; then
+    tar -xzf "$archive_path" --directory $dest_dir
+    return
+  fi
+
+  echo "Unknown archive type"
+  exit 1
+}
+
+get_filename() {
+  local version="$1"
+  local platform="$2"
+
+  # workaround to handle inconsistent file naming between releases
+  if [ $(echo "$version" | sed 's/\.//g') -lt 190 ]; then
+    echo "kubelogin_${version}_${platform}.tar.gz"
+  else
+    echo "kubelogin_${platform}.zip"
+  fi
+}
+
+get_download_url() {
+  local version="$1"
+  local platform="$2"
+  local filename="$(get_filename $version $platform)"
+
+  # workaround to handle inconsistent tag naming between releases
+  if [ $(echo "$version" | sed 's/\.//g') -lt 190 ]; then
+    echo "https://github.com/int128/kubelogin/releases/download/${version}/${filename}"
+  else
+    echo "https://github.com/int128/kubelogin/releases/download/v${version}/${filename}"
+  fi
+}
+
+install_kubelogin $ASDF_INSTALL_TYPE $ASDF_INSTALL_VERSION $ASDF_INSTALL_PATH
